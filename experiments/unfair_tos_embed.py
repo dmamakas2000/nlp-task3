@@ -274,6 +274,7 @@ def main():
     train = convert_train_dataset_into_list(train_dataset)
     tfidf_vectorizer = TfidfVectorizer(tokenizer=bert_tokenize, vocabulary=vocab_list,lowercase=False)
     tfidf_vectorizer.fit(train)
+    tf_idf_scores_tests = tfidf_vectorizer.transform(train)
     max_tfidf = 100
     logger.info("Done calculating TF-IDF score for unfair_tos dataset.")
 
@@ -306,7 +307,7 @@ def main():
             tf_idf_score_text = []
 
             for word_id, count in counts.most_common(n=data_args.max_seq_length - 2):
-                tf_idf = max(int(count * tfidf_vectorizer.idf_[word_id]), max_tfidf)
+                tf_idf = min(int(count * tfidf_vectorizer.idf_[word_id]), max_tfidf)
                 tf_idf_score_text.append(tf_idf)
                 input_id_text.append(word_id)
 

@@ -32,8 +32,9 @@ class CustomCreatedBertModel(BertModel):
     """
 
     def __init__(self, config, add_pooling_layer=True):
+        max_idf = 101 # Maximum IDF
         super().__init__(config, add_pooling_layer=add_pooling_layer)
-        self.tfidf_embeddings = nn.Embedding(num_embeddings=101, embedding_dim=self.config.hidden_size, padding_idx=0)
+        self.tfidf_embeddings = nn.Embedding(num_embeddings=max_idf, embedding_dim=self.config.hidden_size, padding_idx=0)
 
         # Initialize weights and apply final processing
         self.post_init()

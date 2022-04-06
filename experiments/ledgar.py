@@ -268,6 +268,7 @@ def main():
     train = convert_train_dataset_into_list(train_dataset)
     tfidf_vectorizer = TfidfVectorizer(tokenizer=bert_tokenize, vocabulary=vocab_list)
     tfidf_vectorizer.fit(train)
+    max_tfidf = 100
     logger.info("Done calculating TF-IDF score for EUR-LEX dataset.")
 
     # Preprocessing the datasets
