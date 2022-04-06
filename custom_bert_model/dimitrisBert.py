@@ -2,7 +2,6 @@ import logging
 
 from torch.nn import BCEWithLogitsLoss, MSELoss, CrossEntropyLoss
 from transformers import BertPreTrainedModel
-from transformers.file_utils import add_start_docstrings_to_model_forward
 from transformers.modeling_outputs import BaseModelOutputWithPoolingAndCrossAttentions, SequenceClassifierOutput
 from transformers.models.bert import BertModel
 from torch import nn
@@ -31,6 +30,13 @@ class CustomCreatedBertModel(BertModel):
     to `True`. To be used in a Seq2Seq model, the model needs to initialized with both `is_decoder` argument and
     `add_cross_attention` set to `True`; an `encoder_hidden_states` is then expected as an input to the forward pass.
     """
+
+    def __init__(self, config, add_pooling_layer=True):
+        super().__init__(config, add_pooling_layer=add_pooling_layer)
+        self.tfidf_embeddings = nn.Embedding(num_embeddings=101, embedding_dim=self.config.hidden_size, padding_idx=0)
+
+        # Initialize weights and apply final processing
+        self.post_init()
 
     def forward(
         self,
@@ -140,7 +146,9 @@ class CustomCreatedBertModel(BertModel):
         # tf_idfs.detach().numpy().shape -> (4, 128)
 
         # Multiply embeddings with TF-IDF scores
-        embedding_output = embedding_output * torch.unsqueeze(tf_idfs, -1)
+        # embedding_output = embedding_output * torch.unsqueeze(tf_idfs, -1)
+        tf_idf_embedding_output = self.tfidf_embeddings(tf_idfs)
+        embedding_output += tf_idf_embedding_output
 
         encoder_outputs = self.encoder(
             embedding_output,
