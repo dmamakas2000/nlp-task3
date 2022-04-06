@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding=utf-8
-""" Finetuning models on UNFAIR-ToC (e.g. Bert, RoBERTa, LEGAL-BERT)."""
+""" Finetuning models on LEDGAR (e.g. Bert, RoBERTa, LEGAL-BERT)."""
 import collections
 import logging
 import os
@@ -11,12 +11,11 @@ from typing import Optional
 
 import datasets
 from datasets import load_dataset
-from sklearn.metrics import f1_score
-from trainer import MultilabelTrainer
 from scipy.special import expit
+from sklearn.metrics import f1_score
+import numpy as np
 import glob
 import shutil
-import numpy as np
 
 import transformers
 from transformers import (
@@ -29,6 +28,7 @@ from transformers import (
     default_data_collator,
     set_seed,
     EarlyStoppingCallback,
+    Trainer
 )
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
@@ -55,10 +55,10 @@ class DataTrainingArguments:
     """
 
     max_seq_length: Optional[int] = field(
-        default=128,
+        default=512,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
-                    "than this will be truncated, sequences shorter will be padded."
+            "than this will be truncated, sequences shorter will be padded."
         },
     )
     overwrite_cache: bool = field(
@@ -68,28 +68,28 @@ class DataTrainingArguments:
         default=True,
         metadata={
             "help": "Whether to pad all samples to `max_seq_length`. "
-                    "If False, will pad the samples dynamically when batching to the maximum length in the batch."
+            "If False, will pad the samples dynamically when batching to the maximum length in the batch."
         },
     )
     max_train_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
-                    "value if set."
+            "value if set."
         },
     )
     max_eval_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
-                    "value if set."
+            "value if set."
         },
     )
     max_predict_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of prediction examples to this "
-                    "value if set."
+            "value if set."
         },
     )
     server_ip: Optional[str] = field(default=None, metadata={"help": "For distant debugging."})
@@ -131,7 +131,7 @@ class ModelArguments:
         default=False,
         metadata={
             "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
-                    "with private models)."
+            "with private models)."
         },
     )
 
@@ -203,19 +203,16 @@ def main():
     # download the dataset.
     # Downloading and loading eurlex dataset from the hub.
     if training_args.do_train:
-        train_dataset = load_dataset("lex_glue", "unfair_tos", split="train", data_dir='data',
-                                     cache_dir=model_args.cache_dir)
+        train_dataset = load_dataset("lex_glue", "ledgar", split="train", cache_dir=model_args.cache_dir)
 
     if training_args.do_eval:
-        eval_dataset = load_dataset("lex_glue", "unfair_tos", split="validation", data_dir='data',
-                                    cache_dir=model_args.cache_dir)
+        eval_dataset = load_dataset("lex_glue", "ledgar", split="validation", cache_dir=model_args.cache_dir)
 
     if training_args.do_predict:
-        predict_dataset = load_dataset("lex_glue", "unfair_tos", split="test", data_dir='data',
-                                       cache_dir=model_args.cache_dir)
+        predict_dataset = load_dataset("lex_glue", "ledgar", split="test", cache_dir=model_args.cache_dir)
 
     # Labels
-    label_list = list(range(8))
+    label_list = list(range(100))
     num_labels = len(label_list)
 
     # Load pretrained model and tokenizer
@@ -224,7 +221,7 @@ def main():
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         num_labels=num_labels,
-        finetuning_task="unfair_toc",
+        finetuning_task="eurlex",
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
@@ -232,9 +229,6 @@ def main():
 
     if config.model_type == 'big_bird':
         config.attention_type = 'original_full'
-
-    if config.model_type == 'longformer':
-        config.attention_window = [128] * config.num_hidden_layers
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
@@ -267,16 +261,15 @@ def main():
     def bert_tokenize(text):
         return tokenizer.tokenize(text)
 
-    logger.info("Calculating TF-IDF score for unfair_tos dataset.")
+    logger.info("Calculating TF-IDF score for EUR-LEX dataset.")
     # Computes TF-IDF score for training dataset
     vocab_list = [(word, word_id) for word, word_id in tokenizer.vocab.items()]
     vocab_list = [word for word, word_id in sorted(vocab_list, key=lambda tup: tup[1])]
     train = convert_train_dataset_into_list(train_dataset)
-    tfidf_vectorizer = TfidfVectorizer(tokenizer=bert_tokenize, vocabulary=vocab_list,lowercase=False)
+    tfidf_vectorizer = TfidfVectorizer(tokenizer=bert_tokenize, vocabulary=vocab_list, lowercase=False)
     tfidf_vectorizer.fit(train)
-    # tf_idf_scores_tests = tfidf_vectorizer.transform(train)
     max_tfidf = 100
-    logger.info("Done calculating TF-IDF score for unfair_tos dataset.")
+    logger.info("Done calculating TF-IDF score for EUR-LEX dataset.")
 
     # Preprocessing the datasets
     # Padding strategy
@@ -312,12 +305,13 @@ def main():
                 input_id_text.append(word_id)
 
             input_id_text_ = [tokenizer.cls_token_id] + input_id_text + [tokenizer.sep_token_id] \
-                            + [tokenizer.pad_token_id] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
+                             + [tokenizer.pad_token_id] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
             tf_idf_score_text = [max_tfidf] + tf_idf_score_text + [max_tfidf] \
                                 + [0] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
-            attention_mask = [1] * (len(input_id_text) + 2) + [0] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
+            attention_mask = [1] * (len(input_id_text) + 2) + [0] * max(0, data_args.max_seq_length - (
+                        len(input_id_text) + 2))
 
             attention_masks.append(attention_mask)
 
@@ -331,7 +325,7 @@ def main():
         batch["tf_idfs"] = tf_idf_total
         batch["attention_mask"] = attention_masks
         batch["token_type_ids"] = token_type_ids
-        batch["labels"] = [[1 if label in labels else 0 for label in label_list] for labels in examples["labels"]]
+        batch["label"] = [label_list.index(label) for label in examples["label"]]
 
         return batch
 
@@ -374,19 +368,10 @@ def main():
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
-        # Fix gold labels
-        y_true = np.zeros((p.label_ids.shape[0], p.label_ids.shape[1] + 1), dtype=np.int32)
-        y_true[:, :-1] = p.label_ids
-        y_true[:, -1] = (np.sum(p.label_ids, axis=1) == 0).astype('int32')
-        # Fix predictions
         logits = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
-        preds = (expit(logits) > 0.5).astype('int32')
-        y_pred = np.zeros((p.label_ids.shape[0], p.label_ids.shape[1] + 1), dtype=np.int32)
-        y_pred[:, :-1] = preds
-        y_pred[:, -1] = (np.sum(preds, axis=1) == 0).astype('int32')
-        # Compute scores
-        macro_f1 = f1_score(y_true=y_true, y_pred=y_pred, average='macro', zero_division=0)
-        micro_f1 = f1_score(y_true=y_true, y_pred=y_pred, average='micro', zero_division=0)
+        preds = np.argmax(logits, axis=1)
+        macro_f1 = f1_score(y_true=p.label_ids, y_pred=preds, average='macro', zero_division=0)
+        micro_f1 = f1_score(y_true=p.label_ids, y_pred=preds, average='micro', zero_division=0)
         return {'macro-f1': macro_f1, 'micro-f1': micro_f1}
 
     # Data collator will default to DataCollatorWithPadding, so we change it if we already did the padding.
@@ -398,7 +383,7 @@ def main():
         data_collator = None
 
     # Initialize our Trainer
-    trainer = MultilabelTrainer(
+    trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
@@ -467,6 +452,7 @@ def main():
                             writer.write(f"{index}\t{pred_line}\n")
                     except:
                         pass
+
 
     # Clean up checkpoints
     checkpoints = [filepath for filepath in glob.glob(f'{training_args.output_dir}/*/') if '/checkpoint' in filepath]
