@@ -387,7 +387,7 @@ def main():
             batch = tokenizer(cases, padding=False, max_length=False, truncation=False)
 
             # Continuing
-            logger.info("Calculating TF-IDF score for EUR-LEX dataset.")
+            logger.info("Calculating TF-IDF score for ECTHR dataset.")
             # Computes TF-IDF score for training dataset
             vocab_list = [(word, word_id) for word, word_id in tokenizer.vocab.items()]
             vocab_list = [word for word, word_id in sorted(vocab_list, key=lambda tup: tup[1])]
@@ -395,7 +395,7 @@ def main():
             tfidf_vectorizer = TfidfVectorizer(tokenizer=bert_tokenize, vocabulary=vocab_list, lowercase=False)
             tfidf_vectorizer.fit(train)
             max_tfidf = 1000
-            logger.info("Done calculating TF-IDF score for EUR-LEX dataset.")
+            logger.info("Done calculating TF-IDF score for ECTHR dataset.")
 
         attention_masks = []
         tf_idf_total = []
