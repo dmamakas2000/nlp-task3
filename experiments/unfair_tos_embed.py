@@ -267,7 +267,7 @@ def main():
     def bert_tokenize(text):
         return tokenizer.tokenize(text)
 
-    logger.info("Calculating TF-IDF score for unfair_tos dataset.")
+    logger.info("Calculating TF-IDF score for UNFAIR_ToS dataset.")
     # Computes TF-IDF score for training dataset
     vocab_list = [(word, word_id) for word, word_id in tokenizer.vocab.items()]
     vocab_list = [word for word, word_id in sorted(vocab_list, key=lambda tup: tup[1])]
