@@ -380,8 +380,11 @@ def main():
                 batch['global_attention_mask'] = list(global_attention_mask)
         else:
             cases = []
+            # for case in examples['text']:
+            #     cases.append(f'\n'.join(case))
+            # Consider the exact same text with Hier-BERT and Longformer
             for case in examples['text']:
-                cases.append(f'\n'.join(case))
+                cases.append(f' '.join([' '.join(fact.split()[:128]) for fact in case[:64]]))
 
             # Modified, set everything into false
             batch = tokenizer(cases, padding=False, max_length=False, truncation=False)
