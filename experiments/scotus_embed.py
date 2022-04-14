@@ -372,8 +372,13 @@ def main():
                 global_attention_mask[:, 0] = 1
                 batch['global_attention_mask'] = list(global_attention_mask)
         else:
-            batch = tokenizer(examples['text'], padding=False, max_length=False, truncation=False)
-
+            # batch = tokenizer(examples['text'], padding=False, max_length=False, truncation=False)
+            cases = []
+            # Consider the exact same text with Hier-BERT and Longformer
+            for doc in examples['text']:
+                doc = re.split('\n{2,}', doc)
+                cases.append(f' '.join([' '.join(paragraph.split()[:128]) for paragraph in doc[:64]]))
+            batch = tokenizer(cases, padding=False, max_length=False, truncation=False)
             # Continuing
             # Computes TF-IDF score for training dataset
             vocab_list = [(word, word_id) for word, word_id in tokenizer.vocab.items()]
