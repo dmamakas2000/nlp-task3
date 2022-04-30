@@ -136,12 +136,6 @@ class ModelArguments:
                     "with private models)."
         },
     )
-    read_csv_tfidf_buckets_base_directory: str = field(
-        default="",
-        metadata={
-            "help": "The base directory to use in order to read the tf-idf score ranges into a dataframe."
-        },
-    )
     tfidf_buckets: int = field(
         default=14,
         metadata={
@@ -282,40 +276,25 @@ def main():
         return tokenizer.tokenize(text)
 
     def load_csv_into_dataframe(buckets):
-        if buckets == 14:
-            path = model_args.read_csv_tfidf_buckets_base_directory + "/" \
-                   + model_args.model_name_or_path + "_tf_idf_buckets_14.csv"
-            df = pd.read_csv(path)
-            return df
+        path = "../buckets/unfair_tos/unfair_tos_tf_idf_buckets_" + str(buckets) + ".csv"
+        df = pd.read_csv(path)
+        return df
 
-        elif buckets == 30:
-            path = model_args.read_csv_tfidf_buckets_base_directory + "/" \
-                   + model_args.model_name_or_path + "_tf_idf_buckets_30.csv"
-            df = pd.read_csv(path)
-            return df
-
-        elif buckets == 62:
-            path = model_args.read_csv_tfidf_buckets_base_directory + "/" \
-                   + model_args.model_name_or_path + "_tf_idf_buckets_62.csv"
-            df = pd.read_csv(path)
-            return df
-
-        elif buckets == 126:
-            path = model_args.read_csv_tfidf_buckets_base_directory + "/" \
-                   + model_args.model_name_or_path + "_tf_idf_buckets_126.csv"
-            df = pd.read_csv(path)
-            return df
-
-        else:
-            return None
+    def convert_tuple_into_desired_format(list_of_tuples):
+        new_list = []
+        for t in list_of_tuples:
+            new_list.append((t[2], t[3]))
+        return new_list
 
     def categorize_tfidf_score(buckets, score):
-        bucket = 1
-        for b in buckets:
-            if b[0] <= score < b[1]:
-                bucket = index(b)
-        return bucket
-
+        if score >= buckets[len(buckets) - 1][1]:
+            return len(buckets)
+        elif score < buckets[0][0]:
+            return 1
+        else:
+            for b in buckets:
+                if b[0] <= score < b[1]:
+                    return buckets.index(b) + 1
 
     # Computes TF-IDF score for training dataset
     logger.info("Calculating TF-IDF score for unfair_tos dataset.")
@@ -334,6 +313,12 @@ def main():
         # We will pad later, dynamically at batch creation, to the max sequence length in each batch
         padding = False
 
+    # Load the data-frame containing the tfidf score ranges for all buckets
+    ranges_dataframe = load_csv_into_dataframe(model_args.tfidf_buckets)
+    ranges = ranges_dataframe.to_records(index=True)
+    ranges = list(ranges)  # Convert dataframe into a list of tuples
+    ranges = convert_tuple_into_desired_format(ranges)
+
     def preprocess_function(examples):
         # Tokenize the texts
         batch = tokenizer(
@@ -342,11 +327,6 @@ def main():
             max_length=False,
             truncation=False,
         )
-
-        # Load the data-frame containing the tfidf score ranges for all buckets
-        ranges_dataframe = load_csv_into_dataframe(model_args.tfidf_buckets)
-        ranges = ranges_dataframe.to_records(index=False)
-        ranges = list(ranges)   # Convert dataframe into a list of tuples
 
         attention_masks = []
         tf_idf_total = []

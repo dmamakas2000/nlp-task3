@@ -31,7 +31,7 @@ class CustomCreatedBertModel(BertModel):
     `add_cross_attention` set to `True`; an `encoder_hidden_states` is then expected as an input to the forward pass.
     """
     def __init__(self, config, add_pooling_layer=True):
-        max_idf = 1001 # Maximum IDF for ECTHR_A dataset (it was 101 before because for other models max_idf was 100)
+        max_idf = 101 # Maximum IDF for ECTHR_A dataset (it was 101 before because for other models max_idf was 100)
         super().__init__(config, add_pooling_layer=add_pooling_layer)
         self.tfidf_embeddings = nn.Embedding(num_embeddings=max_idf, embedding_dim=self.config.hidden_size, padding_idx=0)
 
@@ -147,8 +147,8 @@ class CustomCreatedBertModel(BertModel):
 
         # Multiply embeddings with TF-IDF scores
         # embedding_output = embedding_output * torch.unsqueeze(tf_idfs, -1)
-        tf_idf_embedding_output = self.tfidf_embeddings(tf_idfs)
-        embedding_output += tf_idf_embedding_output
+        # tf_idf_embedding_output = self.tfidf_embeddings(input_ids)
+        # embedding_output += tf_idf_embedding_output
 
         encoder_outputs = self.encoder(
             embedding_output,
