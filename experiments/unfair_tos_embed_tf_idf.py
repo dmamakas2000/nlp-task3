@@ -371,6 +371,12 @@ def main():
             tuples = zip(*sorted_pairs)
             tf_idf_score_text, tf_idf_bucket_text, input_id_text = [list(t) for t in tuples]
 
+            # Truncate sequences to max length
+            tf_idf_score_text = tf_idf_score_text[:data_args.max_seq_length - 2]
+            tf_idf_bucket_text = tf_idf_bucket_text[:data_args.max_seq_length - 2]
+            input_id_text = input_id_text[:data_args.max_seq_length - 2]
+
+
             input_id_text_ = [tokenizer.cls_token_id] + input_id_text + [tokenizer.sep_token_id] \
                             + [tokenizer.pad_token_id] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
