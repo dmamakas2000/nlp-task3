@@ -18,7 +18,7 @@ used in order to multiply TF-IDF scores of training datasets with positional emb
 
 This class extends BertModel class. 
 """
-class CustomCreatedBertModel(BertModel):
+class BertTFIDFModel(BertModel):
     """
 
     The model can behave as an encoder (with only self-attention) as well as a decoder, in which case a layer of
@@ -31,9 +31,9 @@ class CustomCreatedBertModel(BertModel):
     `add_cross_attention` set to `True`; an `encoder_hidden_states` is then expected as an input to the forward pass.
     """
     def __init__(self, config, add_pooling_layer=True):
-        max_idf = 101 # Maximum IDF for ECTHR_A dataset (it was 101 before because for other models max_idf was 100)
         super().__init__(config, add_pooling_layer=add_pooling_layer)
-        self.tfidf_embeddings = nn.Embedding(num_embeddings=max_idf, embedding_dim=self.config.hidden_size, padding_idx=0)
+        if config.embed_tfidf:
+            self.tfidf_embeddings = nn.Embedding(num_embeddings=config.tfidf_buckets, embedding_dim=self.config.hidden_size, padding_idx=0)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -142,13 +142,12 @@ class CustomCreatedBertModel(BertModel):
             past_key_values_length=past_key_values_length,
         )
 
+        # Collect embeddings for TF-IDF scores
         # embedding_output.detach().numpy().shape -> (4, 128, 768)
         # tf_idfs.detach().numpy().shape -> (4, 128)
-
-        # Multiply embeddings with TF-IDF scores
-        # embedding_output = embedding_output * torch.unsqueeze(tf_idfs, -1)
-        # tf_idf_embedding_output = self.tfidf_embeddings(input_ids)
-        # embedding_output += tf_idf_embedding_output
+        if self.config.embed_tfidf:
+            tf_idf_embedding_output = self.tfidf_embeddings(tf_idfs)
+            embedding_output += tf_idf_embedding_output
 
         encoder_outputs = self.encoder(
             embedding_output,
@@ -177,13 +176,15 @@ class CustomCreatedBertModel(BertModel):
             cross_attentions=encoder_outputs.cross_attentions,
         )
 
-class BertForSequenceClassification(BertPreTrainedModel):
+
+class BertTFIDFForSequenceClassification(BertPreTrainedModel):
+
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.config = config
 
-        self.bert = CustomCreatedBertModel(config)
+        self.bert = BertTFIDFModel(config)
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )

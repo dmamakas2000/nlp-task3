@@ -36,7 +36,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 from sklearn.feature_extraction.text import TfidfVectorizer
-from custom_bert_model.dimitrisBert import BertForSequenceClassification
+from custom_bert_model.TFIDFBert import BertTFIDFForSequenceClassification
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.9.0")
@@ -142,6 +142,12 @@ class ModelArguments:
             "help": "The number of tfidf score buckets to configure for training."
         },
     )
+    embed_tfidf: int = field(
+        default=1,
+        metadata={
+            "help": "Whether to embed TF-IDF scores or not."
+        },
+    )
 
 
 def main():
@@ -237,6 +243,9 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
+    # Set additional parameters to control the use of TF-IDF scores
+    config.tfidf_buckets = model_args.tfidf_buckets + 2
+    config.embed_tfidf = model_args.embed_tfidf
 
     if config.model_type == 'big_bird':
         config.attention_type = 'original_full'
@@ -252,7 +261,7 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = BertForSequenceClassification.from_pretrained(
+    model = BertTFIDFForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
@@ -296,7 +305,7 @@ def main():
                 if b[0] <= score < b[1]:
                     return buckets.index(b) + 1
 
-    # Computes TF-IDF score for training dataset
+    # Compute the IDF scores from the training subset
     logger.info("Calculating TF-IDF score for unfair_tos dataset.")
     vocab_list = [(word, word_id) for word, word_id in tokenizer.vocab.items()]
     vocab_list = [word for word, word_id in sorted(vocab_list, key=lambda tup: tup[1])]
@@ -327,6 +336,8 @@ def main():
             max_length=False,
             truncation=False,
         )
+        # Remove [CLS] and [SEP] tokens
+        batch['input_ids'] = [input_ids[1:-1] for input_ids in batch['input_ids']]
 
         attention_masks = []
         tf_idf_total = []
@@ -334,22 +345,25 @@ def main():
         token_type_ids = []
 
         for input_id in batch["input_ids"]:
+            # Count word ids occurrences
             counts = collections.Counter(input_id)
 
             input_id_text = []
             tf_idf_score_text = []
 
-            for word_id, count in counts.most_common(n=data_args.max_seq_length - 2):
+            # Compute TF-IDF score per word id and find the relevant TF-IDF bucket
+            for word_id, count in counts.most_common():
+                # Compute the TF-IDF score of this word id
                 n = count * tfidf_vectorizer.idf_[word_id]
                 tf_idf = 1 + math.log(n)
 
-                # Get the bucket this word id should be positioned
+                # Get the relevant bucket id, this word id should be positioned
                 bucket_for_word_id = categorize_tfidf_score(ranges, tf_idf)
 
-                tf_idf_score_text.append(tf_idf)
-                input_id_text.append(bucket_for_word_id)
+                tf_idf_score_text.append(bucket_for_word_id)
+                input_id_text.append(word_id)
 
-            # Sort the tf-idf list from a greater to a lower idf score
+            # Sort the sequence elements from a greater to a lower TF-IDF score
             zipped_lists = zip(tf_idf_score_text, input_id_text)
             sorted_pairs = sorted(zipped_lists, reverse=True)
             tuples = zip(*sorted_pairs)
@@ -358,14 +372,15 @@ def main():
             input_id_text_ = [tokenizer.cls_token_id] + input_id_text + [tokenizer.sep_token_id] \
                             + [tokenizer.pad_token_id] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
-            tf_idf_score_text = [100] + tf_idf_score_text + [100] \
+            # Assign the N+1 bucket id to both the [CLS] and [SEP] tokens, and 0 for [PAD] tokens.
+            tf_idf_score_text = [len(ranges)+1] + tf_idf_score_text + [len(ranges)+1] \
                                 + [0] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
             attention_mask = [1] * (len(input_id_text) + 2) + [0] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
             attention_masks.append(attention_mask)
 
-            token_type_id = [0] * data_args.max_seq_length
+            token_type_id = [0] * len(attention_mask)
             token_type_ids.append(token_type_id)
 
             tf_idf_total.append(tf_idf_score_text)
