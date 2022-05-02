@@ -350,6 +350,7 @@ def main():
 
             input_id_text = []
             tf_idf_score_text = []
+            tf_idf_bucket_text = []
 
             # Compute TF-IDF score per word id and find the relevant TF-IDF bucket
             for word_id, count in counts.most_common():
@@ -360,20 +361,21 @@ def main():
                 # Get the relevant bucket id, this word id should be positioned
                 bucket_for_word_id = categorize_tfidf_score(ranges, tf_idf)
 
-                tf_idf_score_text.append(bucket_for_word_id)
+                tf_idf_score_text.append(tf_idf)
+                tf_idf_bucket_text.append(bucket_for_word_id)
                 input_id_text.append(word_id)
 
             # Sort the sequence elements from a greater to a lower TF-IDF score
-            zipped_lists = zip(tf_idf_score_text, input_id_text)
+            zipped_lists = zip(tf_idf_score_text, tf_idf_bucket_text, input_id_text)
             sorted_pairs = sorted(zipped_lists, reverse=True)
             tuples = zip(*sorted_pairs)
-            tf_idf_score_text, input_id_text = [list(t) for t in tuples]
+            tf_idf_score_text, tf_idf_bucket_text, input_id_text = [list(t) for t in tuples]
 
             input_id_text_ = [tokenizer.cls_token_id] + input_id_text + [tokenizer.sep_token_id] \
                             + [tokenizer.pad_token_id] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
             # Assign the N+1 bucket id to both the [CLS] and [SEP] tokens, and 0 for [PAD] tokens.
-            tf_idf_score_text = [len(ranges)+1] + tf_idf_score_text + [len(ranges)+1] \
+            tf_idf_bucket_text = [len(ranges)+1] + tf_idf_bucket_text + [len(ranges)+1] \
                                 + [0] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
             attention_mask = [1] * (len(input_id_text) + 2) + [0] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
@@ -383,7 +385,7 @@ def main():
             token_type_id = [0] * len(attention_mask)
             token_type_ids.append(token_type_id)
 
-            tf_idf_total.append(tf_idf_score_text)
+            tf_idf_total.append(tf_idf_bucket_text)
             id_total.append(input_id_text_)
 
         batch["input_ids"] = id_total
