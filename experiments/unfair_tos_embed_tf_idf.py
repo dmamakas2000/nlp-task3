@@ -137,7 +137,7 @@ class ModelArguments:
         },
     )
     tfidf_buckets: int = field(
-        default=14,
+        default=126,
         metadata={
             "help": "The number of tfidf score buckets to configure for training."
         },
@@ -296,14 +296,16 @@ def main():
         return new_list
 
     def categorize_tfidf_score(buckets, score):
-        if score >= buckets[len(buckets) - 1][1]:
+        if score >= buckets[-1][1]:
             return len(buckets)
-        elif score < buckets[0][0]:
+        elif score <= buckets[0][0]:
             return 1
         else:
-            for b in buckets:
-                if b[0] <= score < b[1]:
-                    return buckets.index(b) + 1
+            for idx, b in enumerate(buckets):
+                if b[0] <= score <= b[1]:
+                    return idx + 1
+
+        print()
 
     # Compute the IDF scores from the training subset
     logger.info("Calculating TF-IDF score for unfair_tos dataset.")
@@ -381,7 +383,7 @@ def main():
                             + [tokenizer.pad_token_id] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
             # Assign the N+1 bucket id to both the [CLS] and [SEP] tokens, and 0 for [PAD] tokens.
-            tf_idf_bucket_text = [len(ranges)+1] + tf_idf_bucket_text + [len(ranges)+1] \
+            tf_idf_bucket_text = [len(ranges) + 1] + tf_idf_bucket_text + [len(ranges) + 1] \
                                 + [0] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
 
             attention_mask = [1] * (len(input_id_text) + 2) + [0] * max(0, data_args.max_seq_length - (len(input_id_text) + 2))
