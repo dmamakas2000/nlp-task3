@@ -365,7 +365,7 @@ def main():
         batch = tokenizer(
             cases,
             padding=False,
-            max_length=False if data_args.full_text else data_args.max_segments * data_args.max_seg_length,
+            max_length=False if data_args.full_text else 8192,
             truncation=False if data_args.full_text else True,
         )
 

@@ -339,7 +339,7 @@ def main():
         batch = tokenizer(
             examples["text"],
             padding=False,
-            max_length=False if data_args.full_text else data_args.max_seq_length,
+            max_length=False if data_args.full_text else 128,
             truncation=False if data_args.full_text else True,
         )
 
