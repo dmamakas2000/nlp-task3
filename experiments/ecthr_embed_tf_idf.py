@@ -66,6 +66,12 @@ class DataTrainingArguments:
             "than this will be truncated, sequences shorter will be padded."
         },
     )
+    full_text: Optional[int] = field(
+        default=1,
+        metadata={
+            "help": "Whether to use the full text or the equivalent to standard models."
+        },
+    )
     max_segments: Optional[int] = field(
         default=64,
         metadata={
@@ -132,9 +138,6 @@ class ModelArguments:
     )
 
     # Modified, set hierarchical option into False (instead of true)
-    hierarchical: bool = field(
-        default=False, metadata={"help": "Whether to use a hierarchical variant or not"}
-    )
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
@@ -191,11 +194,6 @@ def main():
         model_args.do_lower_case = False
     else:
         model_args.do_lower_case = True
-
-    if model_args.hierarchical == 'False' or not model_args.hierarchical:
-        model_args.hierarchical = False
-    else:
-        model_args.hierarchical = True
 
     # Setup distant debugging if needed
     if data_args.server_ip and data_args.server_port:
@@ -285,56 +283,15 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    if config.model_type == 'deberta' and model_args.hierarchical:
-        model = DebertaForSequenceClassification.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
-        )
-    else:
-        model = BertTFIDFForSequenceClassification.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
-        )
 
-    if model_args.hierarchical:
-        # Hack the classifier encoder to use hierarchical BERT
-        if config.model_type in ['bert', 'deberta']:
-            if config.model_type == 'bert':
-                segment_encoder = model.bert
-            else:
-                segment_encoder = model.deberta
-            model_encoder = HierarchicalBert(encoder=segment_encoder,
-                                             max_segments=data_args.max_segments,
-                                             max_segment_length=data_args.max_seg_length)
-            if config.model_type == 'bert':
-                model.bert = model_encoder
-            elif config.model_type == 'deberta':
-                model.deberta = model_encoder
-            else:
-                raise NotImplementedError(f"{config.model_type} is no supported yet!")
-        elif config.model_type == 'roberta':
-            model_encoder = HierarchicalBert(encoder=model.roberta, max_segments=data_args.max_segments,
-                                             max_segment_length=data_args.max_seg_length)
-            model.roberta = model_encoder
-            # Build a new classification layer, as well
-            dense = nn.Linear(config.hidden_size, config.hidden_size)
-            dense.load_state_dict(model.classifier.dense.state_dict())  # load weights
-            dropout = nn.Dropout(config.hidden_dropout_prob).to(model.device)
-            out_proj = nn.Linear(config.hidden_size, config.num_labels).to(model.device)
-            out_proj.load_state_dict(model.classifier.out_proj.state_dict())  # load weights
-            model.classifier = nn.Sequential(dense, dropout, out_proj).to(model.device)
-        elif config.model_type in ['longformer', 'big_bird']:
-            pass
-        else:
-            raise NotImplementedError(f"{config.model_type} is no supported yet!")
+    model = BertTFIDFForSequenceClassification.from_pretrained(
+        model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        config=config,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
 
     # Preprocessing the datasets
     # Padding strategy
@@ -397,53 +354,24 @@ def main():
     ranges = convert_tuple_into_desired_format(ranges)
 
     def preprocess_function(examples):
-        # Tokenize the texts
-        if model_args.hierarchical:
-            case_template = [[0] * data_args.max_seg_length]
-            if config.model_type == 'roberta':
-                batch = {'input_ids': [], 'attention_mask': []}
-                for case in examples['text']:
-                    case_encodings = tokenizer(case[:data_args.max_segments], padding=padding,
-                                               max_length=data_args.max_seg_length, truncation=True)
-                    batch['input_ids'].append(case_encodings['input_ids'] + case_template * (
-                                data_args.max_segments - len(case_encodings['input_ids'])))
-                    batch['attention_mask'].append(case_encodings['attention_mask'] + case_template * (
-                                data_args.max_segments - len(case_encodings['attention_mask'])))
-            else:
-                batch = {'input_ids': [], 'attention_mask': [], 'token_type_ids': []}
-                for case in examples['text']:
-                    case_encodings = tokenizer(case[:data_args.max_segments], padding=padding,
-                                               max_length=data_args.max_seg_length, truncation=True)
-                    batch['input_ids'].append(case_encodings['input_ids'] + case_template * (
-                            data_args.max_segments - len(case_encodings['input_ids'])))
-                    batch['attention_mask'].append(case_encodings['attention_mask'] + case_template * (
-                            data_args.max_segments - len(case_encodings['attention_mask'])))
-                    batch['token_type_ids'].append(case_encodings['token_type_ids'] + case_template * (
-                            data_args.max_segments - len(case_encodings['token_type_ids'])))
-        elif config.model_type in ['longformer', 'big_bird']:
-            cases = []
-            max_position_embeddings = config.max_position_embeddings - 2 if config.model_type == 'longformer' \
-                else config.max_position_embeddings
-            for case in examples['text']:
-                cases.append(f' {tokenizer.sep_token} '.join(
-                    [' '.join(fact.split()[:data_args.max_seg_length]) for fact in case[:data_args.max_segments]]))
-            batch = tokenizer(cases, padding=padding, max_length=max_position_embeddings, truncation=True)
-            if config.model_type == 'longformer':
-                global_attention_mask = np.zeros((len(cases), max_position_embeddings), dtype=np.int32)
-                # global attention on cls token
-                global_attention_mask[:, 0] = 1
-                batch['global_attention_mask'] = list(global_attention_mask)
+        # Pre-process texts
+        if data_args.full_text:
+            cases = examples['text']
         else:
             cases = []
-
             for case in examples['text']:
                 cases.append(f' '.join([' '.join(fact.split()[:128]) for fact in case[:64]]))
 
-            # Modified, set everything into false
-            batch = tokenizer(cases, padding=False, max_length=False, truncation=False)
+        # Tokenize the texts
+        batch = tokenizer(
+            cases,
+            padding=False,
+            max_length=False if data_args.full_text else data_args.max_segments * data_args.max_seg_length,
+            truncation=False if data_args.full_text else True,
+        )
 
-            # Remove [CLS] and [SEP] tokens
-            batch['input_ids'] = [input_ids[1:-1] for input_ids in batch['input_ids']]
+        # Remove [CLS] and [SEP] tokens
+        batch['input_ids'] = [input_ids[1:-1] for input_ids in batch['input_ids']]
 
         attention_masks = []
         tf_idf_total = []

@@ -63,6 +63,12 @@ class DataTrainingArguments:
                     "than this will be truncated, sequences shorter will be padded."
         },
     )
+    full_text: Optional[int] = field(
+        default=1,
+        metadata={
+            "help": "Whether to use the full text or the equivalent to standard models."
+        },
+    )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
     )
@@ -333,9 +339,10 @@ def main():
         batch = tokenizer(
             examples["text"],
             padding=False,
-            max_length=False,
-            truncation=False,
+            max_length=False if data_args.full_text else data_args.max_seq_length,
+            truncation=False if data_args.full_text else True,
         )
+
         # Remove [CLS] and [SEP] tokens
         batch['input_ids'] = [input_ids[1:-1] for input_ids in batch['input_ids']]
 
