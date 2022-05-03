@@ -305,8 +305,6 @@ def main():
                 if b[0] <= score <= b[1]:
                     return idx + 1
 
-        print()
-
     # Compute the IDF scores from the training subset
     logger.info("Calculating TF-IDF score for unfair_tos dataset.")
     vocab_list = [(word, word_id) for word, word_id in tokenizer.vocab.items()]
