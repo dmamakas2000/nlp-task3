@@ -355,10 +355,11 @@ def main():
 
     def preprocess_function(examples):
         # Pre-process texts
+        cases = []
         if data_args.full_text:
-            cases = examples['text']
+            for case in examples['text']:
+                cases.append(f'\n'.join(case))
         else:
-            cases = []
             for case in examples['text']:
                 cases.append(f' '.join([' '.join(fact.split()[:128]) for fact in case[:64]]))
 
