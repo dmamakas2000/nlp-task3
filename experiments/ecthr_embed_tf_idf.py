@@ -329,14 +329,21 @@ def main():
         return new_list
 
     def categorize_tfidf_score(buckets, score):
+        bucket_to_return = 1
+
         if score >= buckets[-1][1]:
-            return len(buckets)
+            bucket_to_return = len(buckets)
         elif score <= buckets[0][0]:
-            return 1
+            bucket_to_return = 1
         else:
             for idx, b in enumerate(buckets):
                 if b[0] <= score <= b[1]:
-                    return idx + 1
+                    bucket_to_return = idx + 1
+
+        if bucket_to_return is None:
+            bucket_to_return = 1
+
+        return bucket_to_return
 
     #  Compute the IDF scores from the training subset
     logger.info("Calculating TF-IDF score for ecthr dataset.")
